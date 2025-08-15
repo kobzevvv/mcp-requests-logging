@@ -20,6 +20,49 @@ jobs:
       - name: Install BigQuery client
         run: npm i @google-cloud/bigquery@7 --no-save
 
+      - name: Insert CI test row
+        env:
+          PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          CREDS_JSON: ${{ secrets.BIGQUERY_CREDS_JSON }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          echo "$CREDS_JSON" > sa.json
+          node - <<'NODE'
+          const {BigQuery} = require('@google-cloud/bigquery');
+          const fs = require('fs');
+          const sa = JSON.parse(fs.readFileSync('sa.json','utf8'));
+          const projectId = process.env.PROJECT_ID;
+          const bq = new BigQuery({projectId, credentials: sa});
+          const row = {
+            schema_version: 1,
+            source: 'github_actions',
+            timestamp: new Date().toISOString(),
+            level: 'INFO',
+            logger: 'gha',
+            message: 'ci_test',
+            exc_info: null,
+            extra: {
+              event: 'ci_test',
+              request_id: process.env.GITHUB_RUN_ID,
+              repo: process.env.GITHUB_REPOSITORY,
+              sha: process.env.GITHUB_SHA,
+              ref: process.env.GITHUB_REF,
+              run_number: process.env.GITHUB_RUN_NUMBER,
+              run_attempt: process.env.GITHUB_RUN_ATTEMPT
+            }
+          };
+          (async () => {
+            const table = bq.dataset('hiring_router_mcp').table('test_events_logging');
+            await table.insert([row], { raw: true });
+            console.log('Inserted CI test row');
+          })().catch(e=>{ console.error(e); process.exit(1); });
+          NODE
+
       - name: Verify recent events exist
         env:
           PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
