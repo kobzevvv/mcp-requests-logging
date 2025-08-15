@@ -19,14 +19,14 @@ jobs:
 
       - name: Send test event via Worker
         env:
-          WORKER_URL: ${{ secrets.WORKER_URL }}
+          DEV_WORKER_URL: ${{ secrets.DEV_WORKER_URL }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -z "$WORKER_URL" ]; then echo "Missing WORKER_URL secret"; exit 1; fi
+          if [ -z "$DEV_WORKER_URL" ]; then echo "Missing DEV_WORKER_URL secret"; exit 1; fi
           node - <<'NODE'
           const crypto = require('crypto');
-          const url = process.env.WORKER_URL;
+          const url = process.env.DEV_WORKER_URL;
           const secret = process.env.WEBHOOK_SECRET;
           const runId = process.env.RUN_ID;
           const body = JSON.stringify({
