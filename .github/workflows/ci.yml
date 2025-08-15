@@ -62,7 +62,7 @@ jobs:
           CREDS_JSON: ${{ secrets.BIGQUERY_CREDS_JSON }}
         run: |
           echo "$CREDS_JSON" > sa.json
-          npm i -g @google-cloud/bigquery@7
+          npm i @google-cloud/bigquery@7 --no-save
           node - <<'NODE'
           const {BigQuery} = require('@google-cloud/bigquery');
           const fs = require('fs');
