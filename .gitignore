@@ -1,0 +1,4 @@
+# Ignore local secrets and env
+BIGQUERY_CREDS_JSON.JSON
+.env
+.env.*
