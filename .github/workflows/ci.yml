@@ -72,7 +72,7 @@ jobs:
                 "`"+process.env.PROJECT_ID+".hiring_router_mcp.test_events_logging` " +
                 `WHERE JSON_VALUE(extra, '$.request_id') = @runId`,
               params: { runId: process.env.GITHUB_RUN_ID },
-              location: 'US'
+              location: 'us-central1'
             });
             const ok = rows[0]?.c > 0;
             if (!ok) { console.error('Row not found'); process.exit(1); }

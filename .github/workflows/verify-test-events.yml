@@ -42,7 +42,7 @@ jobs:
                       FROM \`${projectId}.hiring_router_mcp.test_events_logging\`
                       WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @minutes MINUTE)`,
               params: { minutes },
-              location: 'US'
+              location: 'us-central1'
             });
             const count = Number(rows[0]?.c || 0);
             console.log('Recent rows in window', minutes, 'minutes:', count);
