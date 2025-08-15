@@ -1,4 +1,4 @@
-name: Verify Test Events in BigQuery
+name: Verify Test Events in BigQuery (E2E)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  verify-test-events:
+  verify-e2e:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -17,28 +17,19 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install BigQuery client
-        run: npm i @google-cloud/bigquery@7 --no-save
-
-      - name: Insert CI test row
+      - name: Send test event via Worker
         env:
-          PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
-          CREDS_JSON: ${{ secrets.BIGQUERY_CREDS_JSON }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_REF: ${{ github.ref }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          GITHUB_RUN_NUMBER: ${{ github.run_number }}
-          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          echo "$CREDS_JSON" > sa.json
+          if [ -z "$WORKER_URL" ]; then echo "Missing WORKER_URL secret"; exit 1; fi
           node - <<'NODE'
-          const {BigQuery} = require('@google-cloud/bigquery');
-          const fs = require('fs');
-          const sa = JSON.parse(fs.readFileSync('sa.json','utf8'));
-          const projectId = process.env.PROJECT_ID;
-          const bq = new BigQuery({projectId, credentials: sa});
-          const row = {
+          const crypto = require('crypto');
+          const url = process.env.WORKER_URL;
+          const secret = process.env.WEBHOOK_SECRET;
+          const runId = process.env.RUN_ID;
+          const body = JSON.stringify({
             schema_version: 1,
             source: 'github_actions',
             timestamp: new Date().toISOString(),
@@ -46,29 +37,29 @@ jobs:
             logger: 'gha',
             message: 'ci_test',
             exc_info: null,
-            extra: {
-              event: 'ci_test',
-              request_id: process.env.GITHUB_RUN_ID,
-              repo: process.env.GITHUB_REPOSITORY,
-              sha: process.env.GITHUB_SHA,
-              ref: process.env.GITHUB_REF,
-              run_number: process.env.GITHUB_RUN_NUMBER,
-              run_attempt: process.env.GITHUB_RUN_ATTEMPT
-            }
-          };
+            extra: { event: 'ci_test', request_id: runId }
+          });
+          const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+          if (secret) {
+            const sig = crypto.createHmac('sha256', secret).update(body).digest('hex');
+            headers['X-Signature'] = `sha256=${sig}`;
+          }
           (async () => {
-            const table = bq.dataset('hiring_router_mcp').table('test_events_logging');
-            await table.insert([row], { raw: true });
-            console.log('Inserted CI test row');
+            const res = await fetch(url, { method: 'POST', headers, body });
+            const text = await res.text();
+            console.log('Worker response:', res.status, text);
+            if (!res.ok) throw new Error('Worker returned non-2xx');
           })().catch(e=>{ console.error(e); process.exit(1); });
           NODE
 
-      - name: Verify recent events exist
+      - name: Install BigQuery client
+        run: npm i @google-cloud/bigquery@7 --no-save
+
+      - name: Verify row reached BigQuery
         env:
           PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
           CREDS_JSON: ${{ secrets.BIGQUERY_CREDS_JSON }}
-          WINDOW_MINUTES: 120
-          MIN_COUNT: 1
+          RUN_ID: ${{ github.run_id }}
         run: |
           echo "$CREDS_JSON" > sa.json
           node - <<'NODE'
@@ -76,22 +67,18 @@ jobs:
           const fs = require('fs');
           const sa = JSON.parse(fs.readFileSync('sa.json','utf8'));
           const projectId = process.env.PROJECT_ID;
+          const runId = process.env.RUN_ID;
           const bq = new BigQuery({projectId, credentials: sa});
-          const minutes = Number(process.env.WINDOW_MINUTES || '120');
-          const minCount = Number(process.env.MIN_COUNT || '1');
           (async () => {
             const [rows] = await bq.query({
               query: `SELECT COUNT(1) c
                       FROM \`${projectId}.hiring_router_mcp.test_events_logging\`
-                      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @minutes MINUTE)`,
-              params: { minutes },
+                      WHERE JSON_VALUE(extra, '$.request_id') = @runId`,
+              params: { runId },
               location: 'us-central1'
             });
             const count = Number(rows[0]?.c || 0);
-            console.log('Recent rows in window', minutes, 'minutes:', count);
-            if (count < minCount) {
-              console.error(`Expected at least ${minCount} row(s) in last ${minutes} minutes, found ${count}`);
-              process.exit(1);
-            }
+            console.log('Rows for run_id', runId, ':', count);
+            if (count < 1) { console.error('Row not found'); process.exit(1); }
           })().catch(e=>{ console.error(e); process.exit(1); });
           NODE
