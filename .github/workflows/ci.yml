@@ -34,9 +34,12 @@ jobs:
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: |
           npx wrangler whoami || true
-          echo "$BIGQUERY_CREDS_JSON" | npx wrangler secret put BIGQUERY_CREDS_JSON --env dev --quiet
-          if [ -n "$WEBHOOK_SECRET" ]; then echo "$WEBHOOK_SECRET" | npx wrangler secret put WEBHOOK_SECRET --env dev --quiet; fi
+          echo "$BIGQUERY_CREDS_JSON" | npx wrangler secret put BIGQUERY_CREDS_JSON --env dev
+          if [ -n "$WEBHOOK_SECRET" ]; then echo "$WEBHOOK_SECRET" | npx wrangler secret put WEBHOOK_SECRET --env dev; fi
           npx wrangler deploy --env dev --var BIGQUERY_PROJECT_ID=$BIGQUERY_PROJECT_ID
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Discover Worker URL
         id: discover
