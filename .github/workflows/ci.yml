@@ -80,3 +80,54 @@ jobs:
             console.log('Found row for run', process.env.GITHUB_RUN_ID);
           })().catch(e=>{ console.error(e); process.exit(1); });
           NODE
+
+      - name: Report CI status to BigQuery (always)
+        if: always()
+        env:
+          PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          CREDS_JSON: ${{ secrets.BIGQUERY_CREDS_JSON }}
+          JOB_STATUS: ${{ job.status }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          echo "$CREDS_JSON" > sa.json
+          npm i @google-cloud/bigquery@7 --no-save
+          node - <<'NODE'
+          const {BigQuery} = require('@google-cloud/bigquery');
+          const fs = require('fs');
+          const sa = JSON.parse(fs.readFileSync('sa.json','utf8'));
+          const bq = new BigQuery({projectId: process.env.PROJECT_ID, credentials: sa});
+          const repo = process.env.GITHUB_REPOSITORY;
+          const runId = process.env.GITHUB_RUN_ID;
+          const actionUrl = `https://github.com/${repo}/actions/runs/${runId}`;
+          const level = process.env.JOB_STATUS === 'success' ? 'INFO' : 'ERROR';
+          const row = {
+            schema_version: 1,
+            source: 'github_actions',
+            timestamp: new Date().toISOString(),
+            level,
+            logger: 'gha',
+            message: 'ci_status',
+            exc_info: null,
+            extra: {
+              event: 'ci_status',
+              job_status: process.env.JOB_STATUS,
+              repo: repo,
+              sha: process.env.GITHUB_SHA,
+              ref: process.env.GITHUB_REF,
+              run_id: runId,
+              run_number: process.env.GITHUB_RUN_NUMBER,
+              run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+              action_url: actionUrl
+            }
+          };
+          (async () => {
+            const table = bq.dataset('hiring_router_mcp').table('test_events_logging');
+            await table.insert([{ insertId: runId, json: row }]);
+            console.log('Reported CI status to BigQuery');
+          })().catch(e=>{ console.error(e); process.exit(1); });
+          NODE
