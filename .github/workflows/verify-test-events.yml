@@ -42,9 +42,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          npx wrangler deployments list --env dev --json | tee /tmp/deployments.json | jq -r '.[0].urls[0]' | tee /tmp/url.txt
-          URL=$(cat /tmp/url.txt)
-          if [ -z "$URL" ] || [ "$URL" = "null" ]; then echo "Failed to discover Worker URL"; cat /tmp/deployments.json; exit 1; fi
+          SUBDOMAIN=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain')
+          if [ -z "$SUBDOMAIN" ] || [ "$SUBDOMAIN" = "null" ]; then echo "Failed to fetch account subdomain"; exit 1; fi
+          BASE=$(node -p "require('fs').readFileSync('wrangler.toml','utf8').match(/^name\\s*=\\s*\\\"([^\\\"]+)\\\"/m)[1]")
+          SCRIPT="$BASE-dev"
+          URL="https://$SCRIPT.$SUBDOMAIN.workers.dev"
           echo "url=$URL" >> $GITHUB_OUTPUT
 
       - name: Send test event via Worker

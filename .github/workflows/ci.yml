@@ -41,8 +41,17 @@ jobs:
 
       - name: Discover Worker URL
         id: discover
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          URL=$(npx wrangler deployments list --env dev --json | jq -r '.[0].urls[0]')
+          SUBDOMAIN=$(curl -sf -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | jq -r '.result.subdomain')
+          if [ -z "$SUBDOMAIN" ] || [ "$SUBDOMAIN" = "null" ]; then echo "Failed to fetch account subdomain"; exit 1; fi
+          BASE=$(node -p "require('fs').readFileSync('wrangler.toml','utf8').match(/^name\\s*=\\s*\\\"([^\\\"]+)\\\"/m)[1]")
+          SCRIPT="$BASE-dev"
+          URL="https://$SCRIPT.$SUBDOMAIN.workers.dev"
+          echo "Discovered URL: $URL" >&2
           echo "url=$URL" >> $GITHUB_OUTPUT
       
       - name: Send test event
