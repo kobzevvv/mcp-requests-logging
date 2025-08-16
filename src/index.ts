@@ -44,9 +44,10 @@ export default {
     }
 
     const insertId = payload?.extra?.request_id || (await sha256Hex(rawBody));
-    const insertOk = await insertIntoBigQuery(env, payload, insertId);
-    if (!insertOk) {
-      return new Response('Upstream Error', { status: 502 });
+    const insertResult = await insertIntoBigQuery(env, payload, insertId);
+    if (!insertResult.ok) {
+      const message = insertResult.error ? `Upstream Error: ${insertResult.error}` : 'Upstream Error';
+      return new Response(message, { status: 502 });
     }
 
     return new Response('OK', { status: 200 });
@@ -73,7 +74,7 @@ function safeCompare(a: string, b: string): boolean {
   return res === 0;
 }
 
-async function insertIntoBigQuery(env: Env, row: unknown, insertId?: string): Promise<boolean> {
+async function insertIntoBigQuery(env: Env, row: unknown, insertId?: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const accessToken = await getServiceAccountAccessToken(env);
     const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(env.BIGQUERY_PROJECT_ID)}/datasets/${encodeURIComponent(env.BIGQUERY_DATASET)}/tables/${encodeURIComponent(env.BIGQUERY_TABLE)}/insertAll`;
@@ -86,11 +87,22 @@ async function insertIntoBigQuery(env: Env, row: unknown, insertId?: string): Pr
       },
       body
     });
-    if (!resp.ok) return false;
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error('BigQuery HTTP error', resp.status, text);
+      return { ok: false, error: `BigQuery HTTP ${resp.status}: ${text}` };
+    }
     const data: any = await resp.json();
-    return !data.insertErrors;
-  } catch {
-    return false;
+    if (data.insertErrors) {
+      const details = JSON.stringify(data.insertErrors);
+      console.error('BigQuery insertErrors', details);
+      return { ok: false, error: details };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    console.error('BigQuery insert exception', msg);
+    return { ok: false, error: msg };
   }
 }
 
