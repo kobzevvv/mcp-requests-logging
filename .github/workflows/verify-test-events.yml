@@ -59,11 +59,17 @@ jobs:
         run: |
           node - <<'NODE'
           const crypto = require('crypto');
-          const prefer = (process.env.DEV_WORKER_URL || '').trim();
-          const fallback = (process.env.URL || '').trim();
+          const sanitize = (u) => {
+            let v = (u || '').trim().replace(/^"|"$/g, '');
+            if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
+            return v;
+          };
+          const prefer = sanitize(process.env.DEV_WORKER_URL);
+          const fallback = sanitize(process.env.URL);
           const url = prefer || fallback;
           if (!/^https?:\/\//i.test(url)) {
             console.error('Invalid or missing URL. Provide DEV_WORKER_URL secret or ensure Discover step output is non-empty.');
+            console.error('Debug:', { prefer, fallback });
             process.exit(1);
           }
           const secret = (process.env.WEBHOOK_SECRET || '').trim();

@@ -63,10 +63,24 @@ jobs:
         run: |
           node - <<'NODE'
           const crypto = require('crypto');
-          const prefer = (process.env.DEV_WORKER_URL || '').trim();
-          const fallback = (process.env.URL || '').trim();
+          const rawPrefer = (process.env.DEV_WORKER_URL || '').trim();
+          const rawFallback = (process.env.URL || '').trim();
+          const sanitize = (u) => {
+            let v = (u || '').trim().replace(/^"|"$/g, '');
+            if (v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
+            return v;
+          };
+          const prefer = sanitize(rawPrefer);
+          const fallback = sanitize(rawFallback);
           const url = prefer || fallback;
-          if (!/^https?:\/\//i.test(url)) {
+          const ok = /^https?:\/\//i.test(url);
+          console.log('URL debug:', {
+            preferLen: prefer.length,
+            fallbackLen: fallback.length,
+            preferStartsWithHttp: /^https?:\/\//i.test(prefer),
+            fallbackStartsWithHttp: /^https?:\/\//i.test(fallback)
+          });
+          if (!ok) {
             console.error('Invalid or missing URL. Provide DEV_WORKER_URL secret or ensure Discover step output is non-empty.');
             process.exit(1);
           }
