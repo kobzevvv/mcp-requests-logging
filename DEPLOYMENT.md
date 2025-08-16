@@ -33,7 +33,7 @@ Set your GCP project id var:
 # dev (uses table test_events_logging)
 npx wrangler deploy --env dev --var BIGQUERY_PROJECT_ID=<your-project-id>
 # prod (uses table logging_events)
-npx wrangler deploy --env prod --var BIGQUERY_PROJECT_ID=<your-project-id>
+npx wrangler deploy --env prod --var BIGQUERY_PROJECT_ID=qalearn
 ```
 
 You can also persist `BIGQUERY_PROJECT_ID` under `[vars]` in `wrangler.toml` instead of passing `--var` each time.
