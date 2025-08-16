@@ -44,15 +44,46 @@ jobs:
         run: |
           URL=$(npx wrangler deployments list --env dev --json | jq -r '.[0].urls[0]')
           echo "url=$URL" >> $GITHUB_OUTPUT
-
+      
       - name: Send test event
         id: send
         env:
           URL: ${{ steps.discover.outputs.url }}
+          DEV_WORKER_URL: ${{ secrets.DEV_WORKER_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: |
-          echo "{"schema_version":1,"source":"ci","timestamp":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","level":"INFO","logger":"ci","message":"ci_test","extra":{"event":"ci_test","request_id":"${{ github.run_id }}"}}" > event.json
-          curl -i -s -o /tmp/resp.txt -w "%{http_code}" -X POST "$URL" -H "Content-Type: application/json; charset=utf-8" --data-binary @event.json | tee /tmp/status.txt
-          echo "status=$(cat /tmp/status.txt)" >> $GITHUB_OUTPUT
+          node - <<'NODE'
+          const crypto = require('crypto');
+          const prefer = (process.env.DEV_WORKER_URL || '').trim();
+          const fallback = (process.env.URL || '').trim();
+          const url = prefer || fallback;
+          if (!/^https?:\/\//i.test(url)) {
+            console.error('Invalid or missing URL. Provide DEV_WORKER_URL secret or ensure Discover step output is non-empty.');
+            process.exit(1);
+          }
+          const body = JSON.stringify({
+            schema_version: 1,
+            source: 'ci',
+            timestamp: new Date().toISOString(),
+            level: 'INFO',
+            logger: 'ci',
+            message: 'ci_test',
+            exc_info: null,
+            extra: { event: 'ci_test', request_id: process.env.GITHUB_RUN_ID }
+          });
+          const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+          const secret = (process.env.WEBHOOK_SECRET || '').trim();
+          if (secret) {
+            const sig = crypto.createHmac('sha256', secret).update(body).digest('hex');
+            headers['X-Signature'] = `sha256=${sig}`;
+          }
+          (async () => {
+            const res = await fetch(url, { method: 'POST', headers, body });
+            const text = await res.text();
+            console.log('Worker response:', res.status, text);
+            if (!res.ok) throw new Error('Worker returned non-2xx');
+          })().catch(e => { console.error(e); process.exit(1); });
+          NODE
 
       - name: Verify insert in BigQuery
         env:
