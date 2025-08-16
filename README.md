@@ -1,7 +1,7 @@
 ## Logging Webhook: Contract and BigQuery Loading
 
 This repository documents the webhook event format emitted by the producer service and a recommended Cloudflare Worker + BigQuery ingestion path. The Worker runs at your edge, validates the payload/signature, and forwards events to BigQuery.
-
+ 
 ### TL;DR
 - **Format**: JSON over HTTP POST
 - **Content-Type**: `application/json; charset=utf-8`
