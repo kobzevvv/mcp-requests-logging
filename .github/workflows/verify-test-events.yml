@@ -30,6 +30,7 @@ jobs:
         run: |
           npx wrangler whoami || true
           echo "$BIGQUERY_CREDS_JSON" | npx wrangler secret put BIGQUERY_CREDS_JSON --env dev
+          if [ -n "$BIGQUERY_PROJECT_ID" ]; then echo "$BIGQUERY_PROJECT_ID" | npx wrangler secret put BIGQUERY_PROJECT_ID --env dev; fi
           if [ -n "$WEBHOOK_SECRET" ]; then echo "$WEBHOOK_SECRET" | npx wrangler secret put WEBHOOK_SECRET --env dev; fi
           npx wrangler deploy --env dev --var BIGQUERY_PROJECT_ID=$BIGQUERY_PROJECT_ID
 
