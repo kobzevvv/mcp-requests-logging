@@ -17,17 +17,35 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Discover Worker URL (dev)
+        id: discover
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          URL=$(npx wrangler deployments list --env dev --json | jq -r '.[0].urls[0]')
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
       - name: Send test event via Worker
         env:
           DEV_WORKER_URL: ${{ secrets.DEV_WORKER_URL }}
+          URL: ${{ steps.discover.outputs.url }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          if [ -z "$DEV_WORKER_URL" ]; then echo "Missing DEV_WORKER_URL secret"; exit 1; fi
           node - <<'NODE'
           const crypto = require('crypto');
-          const url = process.env.DEV_WORKER_URL;
-          const secret = process.env.WEBHOOK_SECRET;
+          const prefer = (process.env.DEV_WORKER_URL || '').trim();
+          const fallback = (process.env.URL || '').trim();
+          const url = prefer || fallback;
+          if (!/^https?:\/\//i.test(url)) {
+            console.error('Invalid or missing URL. Provide DEV_WORKER_URL secret or ensure Discover step output is non-empty.');
+            process.exit(1);
+          }
+          const secret = (process.env.WEBHOOK_SECRET || '').trim();
           const runId = process.env.RUN_ID;
           const body = JSON.stringify({
             schema_version: 1,
@@ -44,7 +62,7 @@ jobs:
             const sig = crypto.createHmac('sha256', secret).update(body).digest('hex');
             headers['X-Signature'] = `sha256=${sig}`;
           }
-          (async () => {
+          ;(async () => {
             const res = await fetch(url, { method: 'POST', headers, body });
             const text = await res.text();
             console.log('Worker response:', res.status, text);
