@@ -78,7 +78,8 @@ async function insertIntoBigQuery(env: Env, row: unknown, insertId?: string): Pr
   try {
     const accessToken = await getServiceAccountAccessToken(env);
     const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(env.BIGQUERY_PROJECT_ID)}/datasets/${encodeURIComponent(env.BIGQUERY_DATASET)}/tables/${encodeURIComponent(env.BIGQUERY_TABLE)}/insertAll`;
-    const body = JSON.stringify({ rows: [{ json: row, insertId }] });
+    const prepared = prepareRowForBigQuery(row);
+    const body = JSON.stringify({ rows: [{ json: prepared, insertId }] });
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
@@ -104,6 +105,22 @@ async function insertIntoBigQuery(env: Env, row: unknown, insertId?: string): Pr
     console.error('BigQuery insert exception', msg);
     return { ok: false, error: msg };
   }
+}
+
+function prepareRowForBigQuery(row: unknown): unknown {
+  if (row && typeof row === 'object') {
+    const copy: any = { ...(row as any) };
+    if (copy.extra !== undefined && typeof copy.extra !== 'string') {
+      try {
+        copy.extra = JSON.stringify(copy.extra);
+      } catch {
+        // If serialization fails, fall back to String()
+        copy.extra = String(copy.extra);
+      }
+    }
+    return copy;
+  }
+  return row;
 }
 
 async function getServiceAccountAccessToken(env: Env): Promise<string> {
